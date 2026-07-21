@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ParticipantStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ResultStatus {
+  PENDING
+  FINISHED
+  DNF
+}
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Participant {
+  id        String            @id @default(uuid())
+  firstName String
+  lastName  String
+  status    ParticipantStatus @default(ACTIVE)
+  results   Result[]
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@index([lastName, firstName])
+  @@map("participants")
+}
+
+model Wod {
+  id         String        @id @default(uuid())
+  name       String
+  date       DateTime      @db.Date
+  activities WodActivity[]
+  results    Result[]
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@index([date])
+  @@map("wods")
+}
+
+model WodActivity {
+  id       String @id @default(uuid())
+  name     String
+  position Int
+  wodId    String
+  wod      Wod    @relation(fields: [wodId], references: [id], onDelete: Cascade)
+
+  @@index([wodId, position])
+  @@map("wod_activities")
+}
+
+model Result {
+  id            String      @id @default(uuid())
+  score         String?
+  points        Int         @default(0)
+  status        ResultStatus @default(PENDING)
+  wodId         String
+  participantId String
+  wod           Wod         @relation(fields: [wodId], references: [id], onDelete: Cascade)
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([wodId, participantId])
+  @@index([participantId])
+  @@index([wodId, points])
+  @@map("results")
+}
+
