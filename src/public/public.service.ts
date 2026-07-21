@@ -13,7 +13,7 @@ export class PublicService {
     return {
       id: 'crossfit-gaymes-2026',
       name: 'Gaymes WODs 2026',
-      subtitle: 'Cuatro sábados. Cuatro pruebas. Un campeón.',
+      subtitle: 'Cuatro sábados. Cuatro pruebas. Un marico campeón.',
       description: 'Competencia individual de CrossFit desarrollada durante los cuatro sábados de agosto. Cada fecha suma puntos para el leaderboard general.',
       registrationStart: '2026-07-01',
       registrationEnd: '2026-07-31',

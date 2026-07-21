@@ -7,7 +7,7 @@ services:
       PORT: 8080
       API_PREFIX: api
       JWT_SECRET: ${JWT_SECRET:-development-only-change-me}
-      JWT_EXPIRES_IN: 8h
+      JWT_EXPIRES_IN: 5m
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
     restart: unless-stopped
 
@@ -30,4 +30,3 @@ services:
 
 volumes:
   postgres_data:
-

@@ -60,6 +60,9 @@ Los endpoints administrativos requieren:
 Authorization: Bearer <token>
 ```
 
+La sesión JWT expira después de 5 minutos. Este tiempo puede modificarse mediante
+`JWT_EXPIRES_IN`, pero el valor recomendado para este proyecto es `5m`.
+
 ## Endpoints
 
 ### Salud
@@ -72,8 +75,6 @@ GET /api/health
 
 ```http
 POST /api/auth/login
-GET  /api/auth/me
-POST /api/auth/refresh
 POST /api/auth/logout
 ```
 

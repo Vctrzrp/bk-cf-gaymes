@@ -10,7 +10,7 @@ import { JwtAuthGuard } from './jwt-auth.guard'
     inject: [ConfigService],
     useFactory: (config: ConfigService) => ({
       secret: config.get<string>('JWT_SECRET', 'development-only-secret'),
-      signOptions: { expiresIn: config.get<string>('JWT_EXPIRES_IN', '8h') as never }
+      signOptions: { expiresIn: config.get<string>('JWT_EXPIRES_IN', '5m') as never }
     })
   })],
   controllers: [AuthController],
@@ -18,4 +18,3 @@ import { JwtAuthGuard } from './jwt-auth.guard'
   exports: [JwtAuthGuard, JwtModule]
 })
 export class AuthModule {}
-
