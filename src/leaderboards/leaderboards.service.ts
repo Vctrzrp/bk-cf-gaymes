@@ -1,39 +1,54 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
-import { MockStoreService } from '../mock/mock-store.service'
+import { mapResult } from '../prisma/mappers'
+import { PrismaService } from '../prisma/prisma.service'
 
 @Injectable()
 export class LeaderboardsService {
-  constructor(private readonly store: MockStoreService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  byWod(wodId: string) {
-    if (!this.store.wods.some(wod => wod.id === wodId)) throw new NotFoundException('WOD no encontrado')
-    return this.store.results
-      .filter(result => result.wodId === wodId)
-      .sort((left, right) => right.points - left.points)
-      .map((result, index) => ({
+  async byWod(wodId: string) {
+    const wod = await this.prisma.wod.findUnique({ where: { id: wodId }, select: { id: true } })
+    if (!wod) throw new NotFoundException('WOD no encontrado')
+    const results = await this.prisma.result.findMany({
+      where: { wodId },
+      include: { participant: true },
+      orderBy: [{ points: 'desc' }, { updatedAt: 'asc' }]
+    })
+    return results.map((result, index) => {
+      const { participant, ...record } = result
+      return {
         position: index + 1,
-        ...result,
-        name: this.participantName(result.participantId)
-      }))
+        ...mapResult(record),
+        name: `${participant.firstName} ${participant.lastName}`
+      }
+    })
   }
 
-  general() {
-    const totals = new Map<string, number>()
-    for (const result of this.store.results) {
-      totals.set(result.participantId, (totals.get(result.participantId) ?? 0) + result.points)
-    }
-    return [...totals.entries()]
-      .map(([participantId, points]) => ({ participantId, name: this.participantName(participantId), points }))
-      .sort((left, right) => right.points - left.points)
+  async general() {
+    const participants = await this.prisma.participant.findMany({
+      where: { results: { some: {} } },
+      include: { results: { select: { points: true } } }
+    })
+    return participants
+      .map(participant => ({
+        participantId: participant.id,
+        name: `${participant.firstName} ${participant.lastName}`,
+        points: participant.results.reduce((total, result) => total + result.points, 0)
+      }))
+      .sort((left, right) => right.points - left.points || left.name.localeCompare(right.name, 'es'))
       .map((entry, index) => ({ position: index + 1, ...entry }))
   }
 
-  participant(participantId: string) {
-    const participant = this.store.participants.find(item => item.id === participantId)
+  async participant(participantId: string) {
+    const participant = await this.prisma.participant.findUnique({
+      where: { id: participantId },
+      include: { results: { include: { wod: { select: { name: true } } } } }
+    })
     if (!participant) throw new NotFoundException('Participante no encontrado')
-    const results = this.store.results
-      .filter(result => result.participantId === participantId)
-      .map(result => ({ ...result, wod: this.store.wods.find(wod => wod.id === result.wodId)?.name }))
+    const results = participant.results.map(result => {
+      const { wod, ...record } = result
+      return { ...mapResult(record), wod: wod.name }
+    })
     return {
       participantId,
       name: `${participant.firstName} ${participant.lastName}`,
@@ -41,10 +56,4 @@ export class LeaderboardsService {
       results
     }
   }
-
-  private participantName(id: string) {
-    const participant = this.store.participants.find(item => item.id === id)
-    return participant ? `${participant.firstName} ${participant.lastName}` : 'Participante eliminado'
-  }
 }
-

@@ -41,7 +41,7 @@ async function bootstrap() {
   await app.listen(port, '0.0.0.0')
   logger.log(`API disponible en http://localhost:${port}/${prefix}`)
   logger.log(`Swagger disponible en http://localhost:${port}/${prefix}/docs`)
-  logger.warn('Persistencia mock activa: los datos se reinician al reiniciar el proceso')
+  logger.log('Persistencia PostgreSQL activa mediante Prisma')
 }
 
 void bootstrap()

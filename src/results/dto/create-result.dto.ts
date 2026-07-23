@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 import { IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator'
-import type { ResultStatus } from '../../mock/models'
+import type { ResultStatus } from '../../common/models'
 
 export class CreateResultDto {
   @ApiProperty({ example: 'wod-1' })
@@ -25,4 +25,3 @@ export class CreateResultDto {
   @IsIn(['pending', 'finished', 'dnf'])
   status: ResultStatus
 }
-

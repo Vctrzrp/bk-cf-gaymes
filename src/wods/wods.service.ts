@@ -1,76 +1,104 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common'
-import { MockStoreService } from '../mock/mock-store.service'
+import { Prisma } from '@prisma/client'
+import { mapParticipant, mapResult, mapWod } from '../prisma/mappers'
+import { PrismaService } from '../prisma/prisma.service'
 import { AssignParticipantDto } from './dto/assign-participant.dto'
 import { CreateWodDto } from './dto/create-wod.dto'
 import { UpdateWodDto } from './dto/update-wod.dto'
 
+const includeActivities = { activities: { orderBy: { position: 'asc' as const } } }
+const activityRows = (activities: string[]) =>
+  activities.map((name, position) => ({ name, position }))
+
 @Injectable()
 export class WodsService {
   private readonly logger = new Logger(WodsService.name)
-  constructor(private readonly store: MockStoreService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  all() { return this.store.wods }
+  async all() {
+    return (await this.prisma.wod.findMany({ include: includeActivities })).map(mapWod)
+  }
 
-  find(id: string) {
-    const wod = this.store.wods.find(item => item.id === id)
+  async find(id: string) {
+    const wod = await this.prisma.wod.findUnique({ where: { id }, include: includeActivities })
     if (!wod) throw new NotFoundException('WOD no encontrado')
-    return wod
+    return mapWod(wod)
   }
 
-  create(dto: CreateWodDto) {
-    const timestamp = new Date().toISOString()
-    const wod = { id: this.store.id('wod'), ...dto, createdAt: timestamp, updatedAt: timestamp }
-    this.store.wods.push(wod)
+  async create(dto: CreateWodDto) {
+    const wod = await this.prisma.wod.create({
+      data: {
+        name: dto.name,
+        date: new Date(`${dto.date}T00:00:00.000Z`),
+        activities: { create: activityRows(dto.activities) }
+      },
+      include: includeActivities
+    })
     this.logger.log(`WOD creado id=${wod.id}`)
-    return wod
+    return mapWod(wod)
   }
 
-  update(id: string, dto: UpdateWodDto) {
-    const wod = this.find(id)
-    Object.assign(wod, dto, { updatedAt: new Date().toISOString() })
+  async update(id: string, dto: UpdateWodDto) {
+    await this.find(id)
+    const wod = await this.prisma.$transaction(async transaction => {
+      if (dto.activities) {
+        await transaction.wodActivity.deleteMany({ where: { wodId: id } })
+      }
+      return transaction.wod.update({
+        where: { id },
+        data: {
+          name: dto.name,
+          date: dto.date ? new Date(`${dto.date}T00:00:00.000Z`) : undefined,
+          activities: dto.activities ? { create: activityRows(dto.activities) } : undefined
+        },
+        include: includeActivities
+      })
+    })
     this.logger.log(`WOD actualizado id=${id}`)
-    return wod
+    return mapWod(wod)
   }
 
-  remove(id: string) {
-    const wod = this.find(id)
-    this.store.wods.splice(this.store.wods.indexOf(wod), 1)
-    for (let index = this.store.results.length - 1; index >= 0; index--) {
-      if (this.store.results[index].wodId === id) this.store.results.splice(index, 1)
-    }
+  async remove(id: string) {
+    await this.find(id)
+    const wod = await this.prisma.wod.delete({ where: { id }, include: includeActivities })
     this.logger.log(`WOD eliminado id=${id}`)
-    return wod
+    return mapWod(wod)
   }
 
-  participants(wodId: string) {
-    this.find(wodId)
-    const ids = new Set(this.store.results.filter(result => result.wodId === wodId).map(result => result.participantId))
-    return this.store.participants.filter(participant => ids.has(participant.id))
+  async participants(wodId: string) {
+    await this.find(wodId)
+    const results = await this.prisma.result.findMany({
+      where: { wodId },
+      include: { participant: true }
+    })
+    return results.map(result => mapParticipant(result.participant))
   }
 
-  assign(wodId: string, dto: AssignParticipantDto) {
-    this.find(wodId)
-    if (!this.store.participants.some(participant => participant.id === dto.participantId)) {
-      throw new NotFoundException('Participante no encontrado')
+  async assign(wodId: string, dto: AssignParticipantDto) {
+    await this.find(wodId)
+    const participant = await this.prisma.participant.findUnique({ where: { id: dto.participantId } })
+    if (!participant) throw new NotFoundException('Participante no encontrado')
+    try {
+      const result = await this.prisma.result.create({
+        data: { wodId, participantId: dto.participantId },
+      })
+      this.logger.log(`Participante ${dto.participantId} asignado a WOD ${wodId}`)
+      return mapResult(result)
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('El participante ya está asignado al WOD')
+      }
+      throw error
     }
-    const existing = this.store.results.find(result => result.wodId === wodId && result.participantId === dto.participantId)
-    if (existing) throw new ConflictException('El participante ya está asignado al WOD')
-    const timestamp = new Date().toISOString()
-    const result = {
-      id: this.store.id('result'), wodId, participantId: dto.participantId,
-      score: '', points: 0, status: 'pending' as const, createdAt: timestamp, updatedAt: timestamp
-    }
-    this.store.results.push(result)
-    this.logger.log(`Participante ${dto.participantId} asignado a WOD ${wodId}`)
-    return result
   }
 
-  unassign(wodId: string, participantId: string) {
-    const result = this.store.results.find(item => item.wodId === wodId && item.participantId === participantId)
+  async unassign(wodId: string, participantId: string) {
+    const result = await this.prisma.result.findUnique({
+      where: { wodId_participantId: { wodId, participantId } }
+    })
     if (!result) throw new NotFoundException('Asignación no encontrada')
-    this.store.results.splice(this.store.results.indexOf(result), 1)
+    await this.prisma.result.delete({ where: { id: result.id } })
     this.logger.log(`Participante ${participantId} eliminado de WOD ${wodId}`)
-    return result
+    return mapResult(result)
   }
 }
-

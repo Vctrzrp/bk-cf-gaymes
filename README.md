@@ -1,79 +1,88 @@
 # Crossfit Gaymes Backend
 
-API REST construida con NestJS para el sitio público y el panel React Admin de Crossfit Gaymes.
+API REST construida con NestJS, PostgreSQL y Prisma para el sitio público y el panel React Admin de Crossfit Gaymes.
 
 ## Tecnologías
 
 - NestJS y TypeScript
-- JWT para autenticación
+- PostgreSQL con Prisma ORM
+- JWT para autenticación administrativa
 - Swagger/OpenAPI
-- Prisma preparado para PostgreSQL
 - Docker y Docker Compose
-- Persistencia mock en memoria durante esta etapa
-
-> PostgreSQL y Prisma todavía no se consumen en runtime. Los datos se almacenan en memoria y se reinician cada vez que se reinicia la API. El esquema Prisma queda preparado para la siguiente etapa.
+- Logging de solicitudes y operaciones
 
 ## Requisitos
 
 - Node.js 22 o superior
 - npm 10 o superior
-- Docker opcional
+- PostgreSQL 15 o superior
 
 ## Configuración local
 
 ```bash
 cp .env.example .env
 npm install
+```
+
+Configura una conexión con el esquema `crossfit_gaymes`:
+
+```env
+DATABASE_URL="postgresql://crossfit_app:contraseña@localhost:5432/postgres?schema=crossfit_gaymes"
+JWT_SECRET="una-clave-segura"
+JWT_EXPIRES_IN="5m"
+ADMIN_USERNAME="admin"
+ADMIN_PASSWORD="admin123"
+```
+
+No debes versionar `.env`.
+
+## Base de datos
+
+Generar Prisma Client, aplicar migraciones y cargar datos iniciales:
+
+```bash
+npm run prisma:generate
+npm run prisma:deploy
+npm run prisma:seed
+```
+
+El seed es repetible y crea:
+
+- el administrador configurado mediante `ADMIN_USERNAME` y `ADMIN_PASSWORD`;
+- cinco participantes;
+- cuatro WODs con sus actividades;
+- resultados iniciales para los leaderboards.
+
+La contraseña del administrador se almacena cifrada con bcrypt.
+
+## Ejecución
+
+```bash
 npm run start:dev
 ```
 
-La API queda disponible en:
+- API: `http://localhost:8080/api`
+- Swagger: `http://localhost:8080/api/docs`
 
-```text
-http://localhost:8080/api
-```
-
-Swagger:
-
-```text
-http://localhost:8080/api/docs
-```
-
-## Credenciales mock
+Autenticación inicial, si no cambiaste las variables del seed:
 
 ```text
 Usuario: admin
 Contraseña: admin123
 ```
 
-Ejemplo:
-
-```bash
-curl -X POST http://localhost:8080/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"admin123"}'
-```
-
-Los endpoints administrativos requieren:
+La sesión JWT dura 5 minutos. Los endpoints administrativos requieren:
 
 ```http
 Authorization: Bearer <token>
 ```
 
-La sesión JWT expira después de 5 minutos. Este tiempo puede modificarse mediante
-`JWT_EXPIRES_IN`, pero el valor recomendado para este proyecto es `5m`.
-
 ## Endpoints
 
-### Salud
+### Salud y autenticación
 
 ```http
-GET /api/health
-```
-
-### Autenticación
-
-```http
+GET  /api/health
 POST /api/auth/login
 POST /api/auth/logout
 ```
@@ -88,7 +97,7 @@ PUT    /api/participants/:id
 DELETE /api/participants/:id
 ```
 
-### WODs
+### WODs y asignaciones
 
 ```http
 GET    /api/wods
@@ -96,17 +105,13 @@ GET    /api/wods/:id
 POST   /api/wods
 PUT    /api/wods/:id
 DELETE /api/wods/:id
-```
 
-### Participantes por WOD
-
-```http
 GET    /api/wods/:wodId/participants
 POST   /api/wods/:wodId/participants
 DELETE /api/wods/:wodId/participants/:participantId
 ```
 
-Asignar un participante crea un resultado en estado `pending` con cero puntos.
+Asignar un participante crea un resultado `pending`, sin puntaje.
 
 ### Resultados
 
@@ -126,97 +131,48 @@ Estados soportados:
 | `finished` | Finalizado |
 | `dnf` | Comenzó, pero no terminó |
 
-### Leaderboards públicos
+### Información pública
 
 ```http
 GET /api/wods/:wodId/leaderboard
 GET /api/leaderboards/general
 GET /api/leaderboards/general/:participantId
-```
-
-### Home público
-
-Ambas rutas entregan la misma vista agregada durante esta etapa:
-
-```http
 GET /api/competitions/featured
 GET /api/public/home
 ```
 
-La respuesta incluye información del evento, WODs, actividades, leaderboard por WOD y leaderboard general.
+## React Admin
 
-## Compatibilidad con React Admin
-
-Las listas aceptan los parámetros de `ra-data-simple-rest`:
-
-```text
-sort=["name","ASC"]
-range=[0,24]
-filter={"status":"active"}
-```
-
-Ejemplo:
-
-```http
-GET /api/participants?sort=["lastName","ASC"]&range=[0,24]&filter={"status":"active"}
-```
-
-La API responde los encabezados:
+Las listas aceptan `sort`, `range` y `filter` en formato JSON y exponen las cabeceras requeridas:
 
 ```http
 Content-Range: participants 0-4/5
 X-Total-Count: 5
 ```
 
-CORS expone ambos encabezados al navegador.
-
 ## Docker
 
-Levantar solamente la API mock:
+La API necesita una `DATABASE_URL` accesible desde el contenedor. Para una base PostgreSQL externa o instalada en el host:
 
 ```bash
-docker compose up --build
+DATABASE_URL="postgresql://usuario:contraseña@host:5432/base?schema=crossfit_gaymes" docker compose up --build api
 ```
 
-Levantar también PostgreSQL, aunque la API todavía no lo consume:
+Para usar el PostgreSQL incluido en Compose:
 
 ```bash
+docker compose --profile database up -d postgres
+DATABASE_URL="postgresql://crossfit:crossfit@localhost:5432/crossfit_gaymes?schema=crossfit_gaymes" npm run prisma:deploy
+DATABASE_URL="postgresql://crossfit:crossfit@localhost:5432/crossfit_gaymes?schema=crossfit_gaymes" npm run prisma:seed
 docker compose --profile database up --build
 ```
 
-Detener los contenedores:
+Detener contenedores:
 
 ```bash
 docker compose down
 ```
 
-## Prisma
-
-El modelo futuro se encuentra en `prisma/schema.prisma` e incluye:
-
-- usuarios
-- participantes
-- WODs
-- actividades
-- resultados
-
-Cuando se active PostgreSQL:
-
-```bash
-npm run prisma:generate
-npm run prisma:migrate -- --name initial_schema
-```
-
-Antes de hacerlo será necesario reemplazar `MockStoreService` por repositorios basados en Prisma.
-
 ## Logging
 
-La API registra:
-
-- inicio y resultado de cada solicitud HTTP
-- código de respuesta y duración
-- altas, modificaciones y eliminaciones
-- intentos de autenticación fallidos
-- advertencia explícita cuando la persistencia mock está activa
-
-No se registran contraseñas ni tokens.
+La API registra conexión a PostgreSQL, solicitudes HTTP, duración, código de respuesta, operaciones CRUD e intentos fallidos de autenticación. No registra contraseñas ni tokens.

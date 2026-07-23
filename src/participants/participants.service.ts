@@ -1,44 +1,46 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common'
-import { MockStoreService } from '../mock/mock-store.service'
+import { mapParticipant, participantStatusToDb } from '../prisma/mappers'
+import { PrismaService } from '../prisma/prisma.service'
 import { CreateParticipantDto } from './dto/create-participant.dto'
 import { UpdateParticipantDto } from './dto/update-participant.dto'
 
 @Injectable()
 export class ParticipantsService {
   private readonly logger = new Logger(ParticipantsService.name)
-  constructor(private readonly store: MockStoreService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  all() { return this.store.participants }
+  async all() {
+    return (await this.prisma.participant.findMany()).map(mapParticipant)
+  }
 
-  find(id: string) {
-    const participant = this.store.participants.find(item => item.id === id)
+  async find(id: string) {
+    const participant = await this.prisma.participant.findUnique({ where: { id } })
     if (!participant) throw new NotFoundException('Participante no encontrado')
-    return participant
+    return mapParticipant(participant)
   }
 
-  create(dto: CreateParticipantDto) {
-    const timestamp = new Date().toISOString()
-    const participant = { id: this.store.id('participant'), ...dto, createdAt: timestamp, updatedAt: timestamp }
-    this.store.participants.push(participant)
+  async create(dto: CreateParticipantDto) {
+    const participant = await this.prisma.participant.create({
+      data: { ...dto, status: participantStatusToDb(dto.status) }
+    })
     this.logger.log(`Participante creado id=${participant.id}`)
-    return participant
+    return mapParticipant(participant)
   }
 
-  update(id: string, dto: UpdateParticipantDto) {
-    const participant = this.find(id)
-    Object.assign(participant, dto, { updatedAt: new Date().toISOString() })
+  async update(id: string, dto: UpdateParticipantDto) {
+    await this.find(id)
+    const participant = await this.prisma.participant.update({
+      where: { id },
+      data: { ...dto, status: dto.status ? participantStatusToDb(dto.status) : undefined }
+    })
     this.logger.log(`Participante actualizado id=${id}`)
-    return participant
+    return mapParticipant(participant)
   }
 
-  remove(id: string) {
-    const participant = this.find(id)
-    this.store.participants.splice(this.store.participants.indexOf(participant), 1)
-    for (let index = this.store.results.length - 1; index >= 0; index--) {
-      if (this.store.results[index].participantId === id) this.store.results.splice(index, 1)
-    }
+  async remove(id: string) {
+    await this.find(id)
+    const participant = await this.prisma.participant.delete({ where: { id } })
     this.logger.log(`Participante eliminado id=${id}`)
-    return participant
+    return mapParticipant(participant)
   }
 }
-

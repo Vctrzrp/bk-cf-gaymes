@@ -1,55 +1,88 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common'
-import { MockStoreService } from '../mock/mock-store.service'
+import { Prisma } from '@prisma/client'
+import { mapResult, resultStatusToDb } from '../prisma/mappers'
+import { PrismaService } from '../prisma/prisma.service'
 import { CreateResultDto } from './dto/create-result.dto'
 import { UpdateResultDto } from './dto/update-result.dto'
 
 @Injectable()
 export class ResultsService {
   private readonly logger = new Logger(ResultsService.name)
-  constructor(private readonly store: MockStoreService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  all() { return this.store.results }
-
-  find(id: string) {
-    const result = this.store.results.find(item => item.id === id)
-    if (!result) throw new NotFoundException('Resultado no encontrado')
-    return result
+  async all() {
+    return (await this.prisma.result.findMany()).map(mapResult)
   }
 
-  create(dto: CreateResultDto) {
-    this.ensureReferences(dto.wodId, dto.participantId)
-    if (this.store.results.some(item => item.wodId === dto.wodId && item.participantId === dto.participantId)) {
+  async find(id: string) {
+    const result = await this.prisma.result.findUnique({ where: { id } })
+    if (!result) throw new NotFoundException('Resultado no encontrado')
+    return mapResult(result)
+  }
+
+  async create(dto: CreateResultDto) {
+    await this.ensureReferences(dto.wodId, dto.participantId)
+    try {
+      const result = await this.prisma.result.create({
+        data: {
+          wodId: dto.wodId,
+          participantId: dto.participantId,
+          score: dto.score ?? '',
+          points: dto.points,
+          status: resultStatusToDb(dto.status)
+        }
+      })
+      this.logger.log(`Resultado creado id=${result.id} wod=${dto.wodId} participante=${dto.participantId}`)
+      return mapResult(result)
+    } catch (error) {
+      this.handleConflict(error)
+    }
+  }
+
+  async update(id: string, dto: UpdateResultDto) {
+    const current = await this.prisma.result.findUnique({ where: { id } })
+    if (!current) throw new NotFoundException('Resultado no encontrado')
+    const wodId = dto.wodId ?? current.wodId
+    const participantId = dto.participantId ?? current.participantId
+    await this.ensureReferences(wodId, participantId)
+    try {
+      const result = await this.prisma.result.update({
+        where: { id },
+        data: {
+          wodId: dto.wodId,
+          participantId: dto.participantId,
+          score: dto.score,
+          points: dto.points,
+          status: dto.status ? resultStatusToDb(dto.status) : undefined
+        }
+      })
+      this.logger.log(`Resultado actualizado id=${id}`)
+      return mapResult(result)
+    } catch (error) {
+      this.handleConflict(error)
+    }
+  }
+
+  async remove(id: string) {
+    await this.find(id)
+    const result = await this.prisma.result.delete({ where: { id } })
+    this.logger.log(`Resultado eliminado id=${id}`)
+    return mapResult(result)
+  }
+
+  private async ensureReferences(wodId: string, participantId: string) {
+    const [wod, participant] = await Promise.all([
+      this.prisma.wod.findUnique({ where: { id: wodId }, select: { id: true } }),
+      this.prisma.participant.findUnique({ where: { id: participantId }, select: { id: true } })
+    ])
+    if (!wod) throw new NotFoundException('WOD no encontrado')
+    if (!participant) throw new NotFoundException('Participante no encontrado')
+  }
+
+  private handleConflict(error: unknown): never {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       throw new ConflictException('Ya existe un resultado para este participante y WOD')
     }
-    const timestamp = new Date().toISOString()
-    const result = { id: this.store.id('result'), ...dto, score: dto.score ?? '', createdAt: timestamp, updatedAt: timestamp }
-    this.store.results.push(result)
-    this.logger.log(`Resultado creado id=${result.id} wod=${dto.wodId} participante=${dto.participantId}`)
-    return result
-  }
-
-  update(id: string, dto: UpdateResultDto) {
-    const result = this.find(id)
-    const wodId = dto.wodId ?? result.wodId
-    const participantId = dto.participantId ?? result.participantId
-    this.ensureReferences(wodId, participantId)
-    const duplicate = this.store.results.some(item => item.id !== id && item.wodId === wodId && item.participantId === participantId)
-    if (duplicate) throw new ConflictException('Ya existe un resultado para este participante y WOD')
-    Object.assign(result, dto, { updatedAt: new Date().toISOString() })
-    this.logger.log(`Resultado actualizado id=${id}`)
-    return result
-  }
-
-  remove(id: string) {
-    const result = this.find(id)
-    this.store.results.splice(this.store.results.indexOf(result), 1)
-    this.logger.log(`Resultado eliminado id=${id}`)
-    return result
-  }
-
-  private ensureReferences(wodId: string, participantId: string) {
-    if (!this.store.wods.some(item => item.id === wodId)) throw new NotFoundException('WOD no encontrado')
-    if (!this.store.participants.some(item => item.id === participantId)) throw new NotFoundException('Participante no encontrado')
+    throw error
   }
 }
-

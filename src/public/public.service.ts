@@ -1,15 +1,29 @@
 import { Injectable } from '@nestjs/common'
 import { LeaderboardsService } from '../leaderboards/leaderboards.service'
-import { MockStoreService } from '../mock/mock-store.service'
+import { mapWod } from '../prisma/mappers'
+import { PrismaService } from '../prisma/prisma.service'
 
 @Injectable()
 export class PublicService {
   constructor(
-    private readonly store: MockStoreService,
+    private readonly prisma: PrismaService,
     private readonly leaderboards: LeaderboardsService
   ) {}
 
-  home() {
+  async home() {
+    const records = await this.prisma.wod.findMany({
+      include: { activities: { orderBy: { position: 'asc' } } },
+      orderBy: { date: 'asc' }
+    })
+    const wods = await Promise.all(records.map(async record => ({
+      ...mapWod(record),
+      leaderboard: (await this.leaderboards.byWod(record.id)).map(entry => ({
+        name: entry.name,
+        score: entry.score,
+        points: entry.points
+      }))
+    })))
+
     return {
       id: 'crossfit-gaymes-2026',
       name: 'Gaymes WODs 2026',
@@ -22,16 +36,8 @@ export class PublicService {
       location: 'Ludus Centro',
       mapsUrl: 'https://maps.app.goo.gl/unLjT3s9eNCSsKbMA',
       categories: [],
-      wods: this.store.wods.map(wod => ({
-        ...wod,
-        leaderboard: this.leaderboards.byWod(wod.id).map(entry => ({
-          name: entry.name,
-          score: entry.score,
-          points: entry.points
-        }))
-      })),
-      leaderboard: this.leaderboards.general()
+      wods,
+      leaderboard: await this.leaderboards.general()
     }
   }
 }
-

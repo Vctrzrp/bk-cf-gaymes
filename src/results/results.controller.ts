@@ -16,8 +16,8 @@ export class ResultsController {
   constructor(private readonly service: ResultsService) {}
 
   @Get()
-  list(@Query() query: ListQuery, @Res({ passthrough: true }) response: Response) {
-    const result = listRecords(this.service.all(), query)
+  async list(@Query() query: ListQuery, @Res({ passthrough: true }) response: Response) {
+    const result = listRecords(await this.service.all(), query)
     setListHeaders(response, 'results', result.start, result.end, result.total)
     return result.data
   }
@@ -34,4 +34,3 @@ export class ResultsController {
   @Delete(':id')
   remove(@Param('id') id: string) { return this.service.remove(id) }
 }
-

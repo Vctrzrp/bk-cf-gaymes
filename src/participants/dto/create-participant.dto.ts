@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger'
 import { IsIn, IsString, MinLength } from 'class-validator'
-import type { ParticipantStatus } from '../../mock/models'
+import type { ParticipantStatus } from '../../common/models'
 
 export class CreateParticipantDto {
   @ApiProperty({ example: 'Valentina' })
@@ -17,4 +17,3 @@ export class CreateParticipantDto {
   @IsIn(['active', 'inactive'])
   status: ParticipantStatus
 }
-

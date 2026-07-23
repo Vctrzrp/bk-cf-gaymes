@@ -17,8 +17,8 @@ export class WodsController {
   constructor(private readonly service: WodsService) {}
 
   @Get()
-  list(@Query() query: ListQuery, @Res({ passthrough: true }) response: Response) {
-    const result = listRecords(this.service.all(), query)
+  async list(@Query() query: ListQuery, @Res({ passthrough: true }) response: Response) {
+    const result = listRecords(await this.service.all(), query)
     setListHeaders(response, 'wods', result.start, result.end, result.total)
     return result.data
   }
@@ -46,4 +46,3 @@ export class WodsController {
     return this.service.unassign(id, participantId)
   }
 }
-

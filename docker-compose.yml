@@ -9,6 +9,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-development-only-change-me}
       JWT_EXPIRES_IN: 5m
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+      DATABASE_URL: ${DATABASE_URL:-postgresql://crossfit:crossfit@postgres:5432/crossfit_gaymes?schema=crossfit_gaymes}
     restart: unless-stopped
 
   postgres:
